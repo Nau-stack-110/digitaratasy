@@ -73,19 +73,22 @@ class Client(models.Model):
     adresse = models.CharField(max_length=255)
     cin = models.CharField(max_length=20, unique=True)
     image = models.ImageField(upload_to='client_images/', null=True, blank=True)
-    conjoint = models.OneToOneField(
-        'self', 
-        null=True, 
-        blank=True, 
-        on_delete=models.SET_NULL, 
-        related_name='epoux_de'
-    )
-    enfants = models.ManyToManyField(
-        'self', 
-        symmetrical=False, 
-        related_name='parents', 
-        blank=True
-    )
+    conjoint = models.CharField( max_length=233, null=True, blank=True)
+    enfants = models.CharField( max_length=233, null=True, blank=True)
+    
+    # conjoint = models.OneToOneField(
+    #     'self', 
+    #     null=True, 
+    #     blank=True, 
+    #     on_delete=models.SET_NULL, 
+    #     related_name='epoux_de'
+    # )
+    # enfants = models.ManyToManyField(
+    #     'self', 
+    #     symmetrical=False, 
+    #     related_name='parents', 
+    #     blank=True
+    # )
     qrcode = models.TextField(blank=True)
 
     def __str__(self):
@@ -97,8 +100,8 @@ class Client(models.Model):
             "prenom": self.prenom,
             "date_naissance": str(self.date_naissance),
             "lieu_naissance": self.lieu_naissance.nom if self.lieu_naissance else None,
-            "conjoint": f"{self.conjoint.nom} {self.conjoint.prenom}" if self.conjoint else None,
-            "enfants": [f"{enfant.nom} {enfant.prenom}" for enfant in self.enfants.all()]
+            # "conjoint": f"{self.conjoint.nom} {self.conjoint.prenom}" if self.conjoint else None,
+            # "enfants": [f"{enfant.nom} {enfant.prenom}" for enfant in self.enfants.all()]
         }
         
         qr = qrcode.QRCode(
@@ -136,12 +139,15 @@ class Client(models.Model):
         if not is_new:
             super().save(*args, **kwargs)
 
-        # Création utilisateur
+        # Modification de la génération d'email pour inclure un identifiant unique
+        email = f'client_{self.cin}@digitaratasy.mg'  # Nouveau format d'email
+
+        # Création utilisateur avec vérification d'unicité
         User.objects.update_or_create(
             client_linked=self,
             defaults={
                 'username': self.cin,
-                'email': f'{self.cin}@client.digitaratasy',
+                'email': email,  # Utilisation du nouvel email
                 'is_client': True,
                 'first_name': self.prenom,
                 'last_name': self.nom
@@ -153,14 +159,14 @@ class Client(models.Model):
             original = Client.objects.get(pk=self.pk)
             return any(
                 getattr(self, field) != getattr(original, field)
-                for field in ['nom', 'prenom', 'date_naissance', 'lieu_naissance', 'conjoint']
+                for field in ['nom', 'prenom', 'date_naissance', 'lieu_naissance']
             ) or self.enfants.exclude(pk__in=original.enfants.all()).exists()
         return True
 
-    def clean(self):
-        super().clean()
-        if self.conjoint and self.conjoint.sexe == self.sexe:
-            raise ValidationError("Les conjoints doivent être de sexe différent")
+    # def clean(self):
+    #     super().clean()
+    #     if self.conjoint and self.conjoint.sexe == self.sexe:
+    #         raise ValidationError("Les conjoints doivent être de sexe différent")
 
 
 class TypeActe(models.TextChoices):
@@ -170,6 +176,7 @@ class TypeActe(models.TextChoices):
     ACTE_MARIAGE = 'mariage', "Acte de mariage"
     LEGALISATION = 'legalise', "Légalisation de document"
     ACTE_DE_DIVORCE = 'divorce', "Acte de divorce"
+    ACTE_DE_DECES = 'decès', "Acte de decès"
 
 
 class DemandeActe(models.Model):
@@ -182,10 +189,10 @@ class DemandeActe(models.Model):
         return f"{self.client.nom} - {self.get_type_acte_display()}"
 
 
-@receiver(m2m_changed, sender=Client.enfants.through)
-def update_qrcode_on_enfant_change(sender, instance, action, **kwargs):
-    if action in ['post_add', 'post_remove', 'post_clear']:
-        instance.save()  # regenration du QR code
+# @receiver(m2m_changed, sender=Client.enfants.through)
+# def update_qrcode_on_enfant_change(sender, instance, action, **kwargs):
+#     if action in ['post_add', 'post_remove', 'post_clear']:
+#         instance.save()  # regenration du QR code
 
 
 @receiver(post_save, sender=Client)
